@@ -17,7 +17,9 @@ const (
  enterprise_id, admin_url, capabilities, discovery_methods, identify_methods, display_name, display_name_source, dns_sync, location, asset_tag, notes,
  state, status, supplies, trays, counters, `
 	deviceColsTail = `, consecutive_failures, first_seen, last_seen, last_polled, created_at, updated_at,
- web_url_probed, web_url_override, identify_errors, field_sources`
+ web_url_probed, web_url_override, identify_errors, field_sources, pending_address, pending_address_seen_at`
+	// deviceColCount is how many columns deviceCols names (the INSERT placeholders).
+	deviceColCount = 44
 
 	// deviceCols names the stored columns, for writes.
 	deviceCols = deviceColsHead + "severity" + deviceColsTail
@@ -52,6 +54,7 @@ func scanDevice(r rowScanner) (*model.Device, error) {
 		status, counters                   sql.NullString
 		firstSeen, lastSeen, created, upd  string
 		lastPolled, dnsCheckedAt           sql.NullString
+		pendingSeenAt                      sql.NullString
 		dnsNameSuspect, dnsSync            int
 		failures                           int
 		severity                           string
@@ -59,10 +62,11 @@ func scanDevice(r rowScanner) (*model.Device, error) {
 	err := r.Scan(&d.ID, &d.Address, &d.Hostname, &d.DNSName, &dnsNameSuspect, &dnsCheckedAt, &d.MAC, &d.Serial, &d.UUID, &d.Make, &d.Model, &d.DeviceType, &d.Firmware,
 		&d.SysDescr, &d.SysName, &d.EnterpriseID, &d.AdminURL, &caps, &disc, &ident, &d.DisplayName, &d.DisplayNameSource, &dnsSync, &d.Location, &d.AssetTag,
 		&d.Notes, &d.State, &status, &supplies, &trays, &counters, &severity, &failures, &firstSeen, &lastSeen, &lastPolled, &created, &upd,
-		&d.WebURLProbed, &d.WebURLOverride, &identErrs, &fieldSources)
+		&d.WebURLProbed, &d.WebURLOverride, &identErrs, &fieldSources, &d.PendingAddress, &pendingSeenAt)
 	if err != nil {
 		return nil, err
 	}
+	d.PendingAddressSeenAt = parseTimeP(pendingSeenAt)
 	d.Severity = model.Severity(severity)
 	fromJSON(sql.NullString{String: identErrs, Valid: true}, &d.IdentifyErrors)
 	fromJSON(sql.NullString{String: fieldSources, Valid: true}, &d.FieldSources)
@@ -154,8 +158,31 @@ func IdentityConflicts(existing *model.Device, id *model.Identity) bool {
 	return differs(existing.Serial, id.Serial) || differs(existing.UUID, id.UUID) || differs(existing.MAC, id.MAC)
 }
 
+// SameIdentity reports whether an identity carries at least one of a record's
+// stable identifiers (serial, UUID or MAC) and contradicts none of them.
+func SameIdentity(existing *model.Device, id *model.Identity) bool {
+	if existing == nil || id == nil || IdentityConflicts(existing, id) {
+		return false
+	}
+	same := func(a, b string) bool {
+		a, b = strings.TrimSpace(a), strings.TrimSpace(b)
+		return a != "" && strings.EqualFold(a, b)
+	}
+	return same(existing.Serial, id.Serial) || same(existing.UUID, id.UUID) || same(existing.MAC, id.MAC)
+}
+
+// relocates reports whether an identity matched to a record by a stable
+// identifier was seen at an address other than the record's own.
+func relocates(existing *model.Device, id *model.Identity) bool {
+	return existing.Address != "" && id.Address != "" && existing.Address != id.Address
+}
+
 // UpsertDevice implements Store. Automatic fields are refreshed; operator
-// fields, state and telemetry are untouched (spec §3 principle 5).
+// fields, state and telemetry are untouched (spec §3 principle 5). An
+// identity that matches a record by serial, UUID or MAC but arrives from
+// another address is recorded as that record's pending address and nothing
+// else is merged: the record keeps its address until the change is
+// confirmed (ConfirmRelocation).
 func (s *SQLite) UpsertDevice(ctx context.Context, id *model.Identity, caps map[model.Capability]string, discoveryMethods []string) (*model.Device, bool, error) {
 	existing, err := s.findByIdentity(ctx, id)
 	if err != nil && err != ErrNotFound {
@@ -165,15 +192,23 @@ func (s *SQLite) UpsertDevice(ctx context.Context, id *model.Identity, caps map[
 	n := now()
 	if existing == nil {
 		d := &model.Device{ID: newID()}
-		_, err := s.db.ExecContext(ctx, `INSERT INTO devices (`+deviceCols+`) VALUES (`+placeholders(42)+`)`,
+		_, err := s.db.ExecContext(ctx, `INSERT INTO devices (`+deviceCols+`) VALUES (`+placeholders(deviceColCount)+`)`,
 			d.ID, id.Address, id.Hostname, "", 0, nil, strings.ToLower(id.MAC), id.Serial, id.UUID, id.Make, id.Model, id.DeviceType, id.Firmware,
 			id.SysDescr, id.SysName, id.EnterpriseID, id.AdminURL, toJSON(caps), toJSON(discoveryMethods), toJSON(identMethods),
-			"", "", 0, id.SysLocation, "", "", string(model.StateDiscovered), nil, "[]", "[]", nil, "ok", 0, n, n, nil, n, n, "", "", identifyErrorsJSON(id, nil), "{}")
+			"", "", 0, id.SysLocation, "", "", string(model.StateDiscovered), nil, "[]", "[]", nil, "ok", 0, n, n, nil, n, n, "", "", identifyErrorsJSON(id, nil), "{}", "", nil)
 		if err != nil {
 			return nil, false, err
 		}
 		dev, err := s.GetDevice(ctx, d.ID)
 		return dev, true, err
+	}
+	if relocates(existing, id) {
+		_, err = s.db.ExecContext(ctx, `UPDATE devices SET pending_address=?, pending_address_seen_at=?, updated_at=? WHERE id=?`, id.Address, n, n, existing.ID)
+		if err != nil {
+			return nil, false, err
+		}
+		dev, err := s.GetDevice(ctx, existing.ID)
+		return dev, false, err
 	}
 	// Merge: keep existing values where the new identity is silent.
 	pick := func(newv, old string) string {
@@ -445,6 +480,39 @@ func (s *SQLite) SetDeviceState(ctx context.Context, id string, state model.Life
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, ErrNotFound
+	}
+	return s.GetDevice(ctx, id)
+}
+
+// ConfirmRelocation implements Store. The probed web page belonged to the
+// old address, so it is cleared for the next poll to probe again.
+func (s *SQLite) ConfirmRelocation(ctx context.Context, id string) (*model.Device, error) {
+	d, err := s.GetDevice(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if d.PendingAddress == "" {
+		return nil, ErrNoPendingRelocation
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE devices SET address=pending_address, pending_address='', pending_address_seen_at=NULL, web_url_probed='', updated_at=? WHERE id=?`, now(), id)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetDevice(ctx, id)
+}
+
+// DismissRelocation implements Store.
+func (s *SQLite) DismissRelocation(ctx context.Context, id string) (*model.Device, error) {
+	d, err := s.GetDevice(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if d.PendingAddress == "" {
+		return nil, ErrNoPendingRelocation
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE devices SET pending_address='', pending_address_seen_at=NULL, updated_at=? WHERE id=?`, now(), id)
+	if err != nil {
+		return nil, err
 	}
 	return s.GetDevice(ctx, id)
 }

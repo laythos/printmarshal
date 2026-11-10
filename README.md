@@ -39,7 +39,8 @@ any printer, and depends on no manufacturer's management software.
 ## What it does
 
 - **Discovers and inventories** the fleet with mDNS, WS-Discovery and bounded active scans,
-  reconciled by serial, UUID, MAC and address, with operator-set fields a scan never
+  reconciled by serial, UUID, MAC and address (a known identity at a new address is held
+  as a pending change until confirmed), with operator-set fields a scan never
   overwrites. [Discovery and inventory](https://github.com/laythos/printmarshal/wiki/Discovery-and-inventory)
 - **Monitors** status, supplies, trays, counters and firmware on a schedule, keeps telemetry,
   listens for SNMP traps, and raises alerts to Slack, Teams, Discord, webhooks or email.

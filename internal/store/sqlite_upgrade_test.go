@@ -24,7 +24,7 @@ func TestUpgradeFromSchemaVersion4(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Roll the devices table back to what migration 4 left behind.
-	for _, c := range []string{"dns_name", "dns_name_suspect", "dns_checked_at", "display_name_source", "dns_sync", "web_url_probed", "web_url_override", "identify_errors", "field_sources"} {
+	for _, c := range []string{"dns_name", "dns_name_suspect", "dns_checked_at", "display_name_source", "dns_sync", "web_url_probed", "web_url_override", "identify_errors", "field_sources", "pending_address", "pending_address_seen_at"} {
 		if _, err := s.db.Exec(`ALTER TABLE devices DROP COLUMN ` + c); err != nil {
 			t.Fatalf("drop %s: %v", c, err)
 		}
@@ -39,11 +39,21 @@ func TestUpgradeFromSchemaVersion4(t *testing.T) {
 		t.Fatalf("reopen from schema version 4: %v", err)
 	}
 	defer s.Close()
-	if _, err := s.GetDevice(ctx, d.ID); err != nil {
+	got, err := s.GetDevice(ctx, d.ID)
+	if err != nil {
 		t.Fatalf("device after upgrade: %v", err)
 	}
+	if got.PendingAddress != "" || got.PendingAddressSeenAt != nil {
+		t.Fatalf("an upgraded record has no pending address: %+v", got)
+	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version IN (5,6,7,8,9)`).Scan(&n); err != nil || n != 5 {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version IN (5,6,7,8,9,10)`).Scan(&n); err != nil || n != 6 {
 		t.Fatalf("migrations recorded after upgrade: %d (%v)", n, err)
+	}
+	// The new columns work on the upgraded database: an identity seen
+	// elsewhere becomes a pending address.
+	moved, created, err := s.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.2", Serial: "S1", Method: "snmp"}, nil, nil)
+	if err != nil || created || moved.ID != d.ID || moved.Address != "10.0.0.1" || moved.PendingAddress != "10.0.0.2" {
+		t.Fatalf("pending address after upgrade: %+v created=%v %v", moved, created, err)
 	}
 }

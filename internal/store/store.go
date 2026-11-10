@@ -13,6 +13,10 @@ import (
 // ErrNotFound is returned when a record does not exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrNoPendingRelocation is returned by ConfirmRelocation and
+// DismissRelocation when the device has no pending address.
+var ErrNoPendingRelocation = errors.New("no pending address change on this device")
+
 // DeviceFilter selects devices for listing (spec §8.2 search/sort/filter).
 type DeviceFilter struct {
 	Q        string // free text over name, model, serial, address, location, asset tag
@@ -151,6 +155,13 @@ type Store interface {
 	// model.WebURLNone) without touching operator fields.
 	SetDeviceWebURLProbed(ctx context.Context, id, url string) error
 	SetDeviceState(ctx context.Context, id string, state model.LifecycleState) (*model.Device, error)
+	// ConfirmRelocation moves a device to its pending address (recorded by
+	// UpsertDevice when its identifiers answered elsewhere) and clears the
+	// pending fields; ErrNoPendingRelocation when none is recorded.
+	ConfirmRelocation(ctx context.Context, id string) (*model.Device, error)
+	// DismissRelocation clears a device's pending address and leaves its
+	// address as it is; ErrNoPendingRelocation when none is recorded.
+	DismissRelocation(ctx context.Context, id string) (*model.Device, error)
 	ApplyPoll(ctx context.Context, id string, u PollUpdate) (*model.Device, error)
 	DeviceFailures(ctx context.Context, id string) (int, error)
 	DeleteDevice(ctx context.Context, id string) error

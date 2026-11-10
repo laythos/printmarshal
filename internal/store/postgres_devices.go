@@ -21,6 +21,7 @@ func scanDevicePG(r rowScanner) (*model.Device, error) {
 		status, counters                   sql.NullString
 		firstSeen, lastSeen, created, upd  time.Time
 		lastPolled, dnsCheckedAt           sql.NullTime
+		pendingSeenAt                      sql.NullTime
 		dnsNameSuspect, dnsSync            int
 		failures                           int
 		severity                           string
@@ -28,10 +29,11 @@ func scanDevicePG(r rowScanner) (*model.Device, error) {
 	err := r.Scan(&d.ID, &d.Address, &d.Hostname, &d.DNSName, &dnsNameSuspect, &dnsCheckedAt, &d.MAC, &d.Serial, &d.UUID, &d.Make, &d.Model, &d.DeviceType, &d.Firmware,
 		&d.SysDescr, &d.SysName, &d.EnterpriseID, &d.AdminURL, &caps, &disc, &ident, &d.DisplayName, &d.DisplayNameSource, &dnsSync, &d.Location, &d.AssetTag,
 		&d.Notes, &d.State, &status, &supplies, &trays, &counters, &severity, &failures, &firstSeen, &lastSeen, &lastPolled, &created, &upd,
-		&d.WebURLProbed, &d.WebURLOverride, &identErrs, &fieldSources)
+		&d.WebURLProbed, &d.WebURLOverride, &identErrs, &fieldSources, &d.PendingAddress, &pendingSeenAt)
 	if err != nil {
 		return nil, err
 	}
+	d.PendingAddressSeenAt = timeOf(pendingSeenAt)
 	d.Severity = model.Severity(severity)
 	fromJSON(sql.NullString{String: identErrs, Valid: true}, &d.IdentifyErrors)
 	fromJSON(sql.NullString{String: fieldSources, Valid: true}, &d.FieldSources)
@@ -112,8 +114,8 @@ func (s *Postgres) findByIdentity(ctx context.Context, id *model.Identity) (*mod
 	return d, nil
 }
 
-// UpsertDevice implements Store. Automatic fields are refreshed; operator
-// fields, state and telemetry are untouched (spec §3 principle 5).
+// UpsertDevice implements Store; see the SQLite method for the rules, the
+// pending address included.
 func (s *Postgres) UpsertDevice(ctx context.Context, id *model.Identity, caps map[model.Capability]string, discoveryMethods []string) (*model.Device, bool, error) {
 	existing, err := s.findByIdentity(ctx, id)
 	if err != nil && err != ErrNotFound {
@@ -123,15 +125,23 @@ func (s *Postgres) UpsertDevice(ctx context.Context, id *model.Identity, caps ma
 	n := nowUTC()
 	if existing == nil {
 		d := &model.Device{ID: newID()}
-		_, err := pgExec(ctx, s.db, `INSERT INTO devices (`+deviceCols+`) VALUES (`+placeholders(42)+`)`,
+		_, err := pgExec(ctx, s.db, `INSERT INTO devices (`+deviceCols+`) VALUES (`+placeholders(deviceColCount)+`)`,
 			d.ID, id.Address, id.Hostname, "", 0, nil, strings.ToLower(id.MAC), id.Serial, id.UUID, id.Make, id.Model, id.DeviceType, id.Firmware,
 			id.SysDescr, id.SysName, id.EnterpriseID, id.AdminURL, toJSON(caps), toJSON(discoveryMethods), toJSON(identMethods),
-			"", "", 0, id.SysLocation, "", "", string(model.StateDiscovered), nil, "[]", "[]", nil, "ok", 0, n, n, nil, n, n, "", "", identifyErrorsJSON(id, nil), "{}")
+			"", "", 0, id.SysLocation, "", "", string(model.StateDiscovered), nil, "[]", "[]", nil, "ok", 0, n, n, nil, n, n, "", "", identifyErrorsJSON(id, nil), "{}", "", nil)
 		if err != nil {
 			return nil, false, err
 		}
 		dev, err := s.GetDevice(ctx, d.ID)
 		return dev, true, err
+	}
+	if relocates(existing, id) {
+		_, err = pgExec(ctx, s.db, `UPDATE devices SET pending_address=?, pending_address_seen_at=?, updated_at=? WHERE id=?`, id.Address, n, n, existing.ID)
+		if err != nil {
+			return nil, false, err
+		}
+		dev, err := s.GetDevice(ctx, existing.ID)
+		return dev, false, err
 	}
 	pick := func(newv, old string) string {
 		if strings.TrimSpace(newv) != "" {
@@ -313,6 +323,36 @@ func (s *Postgres) SetDeviceDNS(ctx context.Context, id, dnsName string, suspect
 // SetDeviceState implements Store.
 func (s *Postgres) SetDeviceState(ctx context.Context, id string, state model.LifecycleState) (*model.Device, error) {
 	if err := affected(pgExec(ctx, s.db, `UPDATE devices SET state=?, updated_at=? WHERE id=?`, string(state), nowUTC(), id)); err != nil {
+		return nil, err
+	}
+	return s.GetDevice(ctx, id)
+}
+
+// ConfirmRelocation implements Store.
+func (s *Postgres) ConfirmRelocation(ctx context.Context, id string) (*model.Device, error) {
+	d, err := s.GetDevice(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if d.PendingAddress == "" {
+		return nil, ErrNoPendingRelocation
+	}
+	if _, err := pgExec(ctx, s.db, `UPDATE devices SET address=pending_address, pending_address='', pending_address_seen_at=NULL, web_url_probed='', updated_at=? WHERE id=?`, nowUTC(), id); err != nil {
+		return nil, err
+	}
+	return s.GetDevice(ctx, id)
+}
+
+// DismissRelocation implements Store.
+func (s *Postgres) DismissRelocation(ctx context.Context, id string) (*model.Device, error) {
+	d, err := s.GetDevice(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if d.PendingAddress == "" {
+		return nil, ErrNoPendingRelocation
+	}
+	if _, err := pgExec(ctx, s.db, `UPDATE devices SET pending_address='', pending_address_seen_at=NULL, updated_at=? WHERE id=?`, nowUTC(), id); err != nil {
 		return nil, err
 	}
 	return s.GetDevice(ctx, id)

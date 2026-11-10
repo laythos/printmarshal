@@ -166,8 +166,15 @@ func TestOfflineDetection(t *testing.T) {
 	if _, _, err := svc.PollDevice(ctx, dev); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate the device moving to an address that does not answer.
-	moved, _, _ := st.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.250", Serial: dev.Serial, Method: "snmp"}, nil, nil)
+	// Simulate the device moving to an address that does not answer: the
+	// new address is pending until confirmed (relocation_test.go).
+	if _, _, err := st.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.250", Serial: dev.Serial, Method: "snmp"}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := st.ConfirmRelocation(ctx, dev.ID)
+	if err != nil || moved.Address != "10.0.0.250" {
+		t.Fatalf("confirm: %+v %v", moved, err)
+	}
 	upd, res, err := svc.PollDevice(ctx, moved)
 	if err != nil {
 		t.Fatal(err)

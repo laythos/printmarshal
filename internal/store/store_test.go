@@ -42,8 +42,9 @@ func testOperatorFieldsSurviveScan(t *testing.T, s testStore) {
 	if _, err := s.SetDeviceState(ctx, d.ID, model.StateActive); err != nil {
 		t.Fatal(err)
 	}
-	// Second scan: new address, new location, new firmware.
-	id2 := &model.Identity{Address: "10.0.0.77", Serial: "SN1", Model: "Acme 1 rev2", Firmware: "3.0", SysLocation: "Somewhere else", Method: "ipp"}
+	// Second scan by another method: new location, new firmware. (A new
+	// address is a pending change, not an update: testIdentityAtNewAddressIsPending.)
+	id2 := &model.Identity{Address: "10.0.0.5", Serial: "SN1", Model: "Acme 1 rev2", Firmware: "3.0", SysLocation: "Somewhere else", Method: "ipp"}
 	d2, created, err := s.UpsertDevice(ctx, id2, map[model.Capability]string{model.CapReadSupplies: "ipp"}, []string{"mdns"})
 	if err != nil || created {
 		t.Fatalf("second upsert: %v created=%v", err, created)
@@ -54,7 +55,7 @@ func testOperatorFieldsSurviveScan(t *testing.T, s testStore) {
 	if d2.DisplayName != name || d2.Location != loc || d2.AssetTag != tag || d2.Notes != notes || d2.State != model.StateActive {
 		t.Errorf("operator fields overwritten: %+v", d2)
 	}
-	if d2.Address != "10.0.0.77" || d2.Firmware != "3.0" || d2.Model != "Acme 1 rev2" {
+	if d2.Address != "10.0.0.5" || d2.Firmware != "3.0" || d2.Model != "Acme 1 rev2" {
 		t.Errorf("automatic fields not refreshed: %+v", d2)
 	}
 	if d2.Capabilities[model.CapReadStatus] != "snmp" || d2.Capabilities[model.CapReadSupplies] != "ipp" {
@@ -111,21 +112,21 @@ func testOperatorFieldsSurviveScan(t *testing.T, s testStore) {
 		t.Errorf("manual displayName should clear displayNameSource, got %+v", dManual)
 	}
 	// Plain "first non-empty wins" for hostname on UpsertDevice.
-	dHost1, _, err := s.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.77", Serial: "SN1", Hostname: "first-host", Method: "ipp"}, nil, []string{"mdns"})
+	dHost1, _, err := s.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.5", Serial: "SN1", Hostname: "first-host", Method: "ipp"}, nil, []string{"mdns"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if dHost1.Hostname != "first-host" {
 		t.Errorf("first hostname = %q, want first-host", dHost1.Hostname)
 	}
-	dHost2, _, err := s.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.77", Serial: "SN1", Hostname: "second-host", Method: "snmp"}, nil, []string{"scan"})
+	dHost2, _, err := s.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.5", Serial: "SN1", Hostname: "second-host", Method: "snmp"}, nil, []string{"scan"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if dHost2.Hostname != "second-host" {
 		t.Errorf("new non-empty hostname should win: got %q, want second-host", dHost2.Hostname)
 	}
-	dHost3, _, err := s.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.77", Serial: "SN1", Hostname: "", Method: "snmp"}, nil, []string{"scan"})
+	dHost3, _, err := s.UpsertDevice(ctx, &model.Identity{Address: "10.0.0.5", Serial: "SN1", Hostname: "", Method: "snmp"}, nil, []string{"scan"})
 	if err != nil {
 		t.Fatal(err)
 	}

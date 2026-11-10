@@ -156,13 +156,26 @@ func (s *SQLite) migrate() error {
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (9, ?)`, now()); err != nil {
 		return err
 	}
+	// Migration 10: an address at which a device's identifiers were seen,
+	// held until the change is confirmed (UpsertDevice, ConfirmRelocation).
+	for _, col := range []struct{ name, ddl string }{
+		{"pending_address", "pending_address TEXT NOT NULL DEFAULT ''"},
+		{"pending_address_seen_at", "pending_address_seen_at TEXT"},
+	} {
+		if err := s.addColumn("devices", col.name, col.ddl); err != nil {
+			return fmt.Errorf("migrate devices.%s: %w", col.name, err)
+		}
+	}
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (10, ?)`, now()); err != nil {
+		return err
+	}
 	return nil
 }
 
 // timestampColumns lists every TEXT column holding a ts()/now() value.
 var timestampColumns = map[string][]string{
 	"schema_migrations":         {"applied_at"},
-	"devices":                   {"first_seen", "last_seen", "dns_checked_at", "created_at", "updated_at"},
+	"devices":                   {"first_seen", "last_seen", "dns_checked_at", "created_at", "updated_at", "pending_address_seen_at"},
 	"groups":                    {"created_at", "updated_at"},
 	"credentials":               {"created_at", "updated_at"},
 	"jobs":                      {"created_at", "started_at", "finished_at"},

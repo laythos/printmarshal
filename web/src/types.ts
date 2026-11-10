@@ -17,6 +17,7 @@ export interface Device {
   id: string; address: string; hostname?: string; dnsName?: string; dnsNameSuspect?: boolean; dnsCheckedAt?: string; mac?: string; serial?: string; uuid?: string; make?: string; model?: string
   deviceType?: string; firmware?: string; sysDescr?: string; sysName?: string; enterpriseId?: number; adminUrl?: string
   webUrl?: string; webUrlProbed?: string; webUrlOverride?: string
+  pendingAddress?: string; pendingAddressSeenAt?: string
   capabilities: Record<string, string>; discoveryMethods: string[]; identifyMethods: string[]; identifyErrors?: Record<string, string>
   displayName: string; displayNameSource?: string; dnsSync?: boolean; dnsNameChanged?: boolean; location: string; assetTag: string; notes: string; state: string
   /** The worse of status.severity and the device's active operating alerts, or offline. */

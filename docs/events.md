@@ -41,7 +41,7 @@ start-up (it would never fire). Producers that publish a type outside the
 catalogue are logged too, so the catalogue cannot silently drift.
 
 The catalogue itself lives in `internal/events/events.go`. Current types:
-device.discovered / updated / deleted, alert.raised / cleared / acked,
+device.discovered / updated / relocated / deleted, alert.raised / cleared / acked,
 job.updated / finished, config.applied, security.assessed / remediated,
 firmware.campaign.updated / firmware.device.updated, consumable.updated / low /
 replacement, auth.login / failed / denied / logout / session.revoked,

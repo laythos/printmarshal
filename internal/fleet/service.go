@@ -137,13 +137,19 @@ func (s *Service) identifyLater(ctx context.Context, dev *model.Device) *model.D
 		return dev
 	}
 	if upd.ID != dev.ID {
-		// The printer is already recorded (by serial) and has moved to this
-		// address: that record now holds the address; this one is left for
-		// an administrator to remove.
+		// The printer is already recorded (by serial) at another address:
+		// that record now holds this address as a pending change; this one
+		// is left for an administrator to remove.
 		s.Log.Warn("address-only record is a printer already recorded", "device", dev.ID, "recorded", upd.ID)
 		return dev
 	}
 	return upd
+}
+
+// pendingAt reports whether an identification of address ended as a pending
+// address change on a record kept elsewhere (store.Store.UpsertDevice).
+func pendingAt(dev *model.Device, address string) bool {
+	return dev != nil && dev.PendingAddress != "" && dev.PendingAddress == address && dev.Address != address
 }
 
 func (s *Service) identifyWith(ctx context.Context, creds model.Creds, address string, methods []string, hints discovery.Candidate) (*model.Device, bool, error) {
@@ -155,6 +161,14 @@ func (s *Service) identifyWith(ctx context.Context, creds model.Creds, address s
 	dev, created, err := s.Store.UpsertDevice(ctx, ident, caps, methods)
 	if err != nil {
 		return nil, false, err
+	}
+	if pendingAt(dev, address) {
+		// The identifiers belong to a record kept at another address. The
+		// record is told, and nothing of it (its hostname lookup, web page
+		// probe or credentials) is directed at this address.
+		s.Log.Warn("identity of a recorded device seen at another address", "device", dev.ID, "recorded", dev.Address, "seen", address)
+		s.emit("device.updated", dev)
+		return dev, false, nil
 	}
 	if dev.Decommissioned() {
 		return dev, created, nil // the sweep found it; nothing more goes to it
@@ -221,6 +235,9 @@ func (s *Service) PollDevice(ctx context.Context, dev *model.Device) (*model.Dev
 	if needsIdentification(dev) {
 		dev = s.identifyLater(ctx, dev)
 	}
+	if dev.PendingAddress != "" {
+		dev = s.maybeRelocate(ctx, dev)
+	}
 	creds := s.Creds(ctx, dev)
 	res := s.Engine.Poll(ctx, dev, creds)
 	updated, err := s.Store.ApplyPoll(ctx, dev.ID, store.PollUpdate{
@@ -257,6 +274,44 @@ func (s *Service) PollDevice(ctx context.Context, dev *model.Device) (*model.Dev
 	}
 	s.emit("device.updated", updated)
 	return updated, res, nil
+}
+
+// relocationVerifyTimeout bounds the identification at a pending address
+// within a poll.
+const relocationVerifyTimeout = 30 * time.Second
+
+// maybeRelocate moves a record to its pending address once its recorded
+// address has stopped answering: the record must already count as offline
+// (consecutive poll failures at or above the offline threshold), and the
+// pending address must answer an identification with the record's own
+// stable identifiers. That identification uses the global read credentials
+// only, as a discovery does; the record's own credentials go to the new
+// address only after the move. Anything short of this leaves the record
+// where it is, for an operator to confirm or dismiss.
+func (s *Service) maybeRelocate(ctx context.Context, dev *model.Device) *model.Device {
+	failures, err := s.Store.DeviceFailures(ctx, dev.ID)
+	if err != nil || failures < s.thresholds().OfflineAfterFailures {
+		return dev
+	}
+	ictx, cancel := context.WithTimeout(ctx, relocationVerifyTimeout)
+	defer cancel()
+	ident, _, err := s.Engine.Identify(ictx, dev.PendingAddress, s.Creds(ctx, &model.Device{Address: dev.PendingAddress}))
+	if err != nil {
+		s.Log.Debug("pending address did not answer", "device", dev.ID, "address", dev.PendingAddress, "err", err)
+		return dev
+	}
+	if !store.SameIdentity(dev, ident) {
+		s.Log.Warn("pending address answers with another identity", "device", dev.ID, "address", dev.PendingAddress)
+		return dev
+	}
+	moved, err := s.Store.ConfirmRelocation(ctx, dev.ID)
+	if err != nil {
+		s.Log.Warn("address change not stored", "device", dev.ID, "err", err)
+		return dev
+	}
+	s.Log.Warn("device followed its identity to a new address", "device", dev.ID, "from", dev.Address, "to", moved.Address)
+	s.emit("device.relocated", moved)
+	return moved
 }
 
 func samples(d *model.Device, res *engine.PollResult) []model.TelemetrySample {
@@ -444,6 +499,13 @@ func (s *Service) runDiscovery(ctx context.Context, jc *jobs.Context) error {
 					status = "skipped" // responded to discovery but is not a manageable printer
 				}
 				jc.Result("", c.Address, status, err.Error(), map[string]any{"methods": c.Methods, "services": c.Services})
+				return
+			}
+			if pendingAt(dev, c.Address) {
+				// Not this record's address yet: no poll goes here until the
+				// change is confirmed (PollDevice, or an operator).
+				jc.Result(dev.ID, c.Address, "ok", "answers with the identity of a device recorded at "+dev.Address+"; address change pending confirmation",
+					map[string]any{"methods": c.Methods, "model": dev.Model, "created": false, "pendingAddress": c.Address})
 				return
 			}
 			msg := "updated"

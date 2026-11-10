@@ -114,6 +114,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/devices/bulk", s.require(model.RoleOperator, s.bulkPatchDevices))
 	mux.Handle("POST /api/devices/{id}/poll", s.require(model.RoleOperator, s.pollDevice))
 	mux.Handle("POST /api/devices/{id}/refresh-hostname", s.require(model.RoleOperator, s.refreshDeviceHostname))
+	mux.Handle("POST /api/devices/{id}/address", s.require(model.RoleOperator, s.resolveDeviceAddress))
 	mux.Handle("POST /api/devices/{id}/state", s.require(model.RoleOperator, s.setDeviceState))
 	mux.Handle("GET /api/devices/{id}/alerts", s.require(model.RoleViewer, s.deviceAlerts))
 	mux.Handle("GET /api/devices/{id}/telemetry", s.require(model.RoleViewer, s.deviceTelemetry))

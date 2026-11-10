@@ -107,6 +107,15 @@ type Device struct {
 	WebURL         string `json:"webUrl,omitempty"`
 	WebURLProbed   string `json:"webUrlProbed,omitempty"`
 	WebURLOverride string `json:"webUrlOverride,omitempty"` // operator field
+	// PendingAddress is an address at which a host answered an identification
+	// with this record's stable identifiers (serial, UUID or MAC) while the
+	// record kept its own address. The record follows it only once the change
+	// is confirmed: by an operator, or by a poll that finds the recorded
+	// address silent and the pending one answering with the same identity
+	// (fleet.Service.PollDevice). Until then nothing bound to the record, its
+	// credentials included, is sent to the pending address.
+	PendingAddress       string     `json:"pendingAddress,omitempty"`
+	PendingAddressSeenAt *time.Time `json:"pendingAddressSeenAt,omitempty"`
 
 	// Resolved capability profile: capability -> driver that serves it.
 	Capabilities     map[Capability]string `json:"capabilities"`

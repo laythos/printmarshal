@@ -24,6 +24,7 @@ func runStoreTests(t *testing.T, open func(t *testing.T) testStore) {
 		fn   func(t *testing.T, s testStore)
 	}{
 		{"OperatorFieldsSurviveScan", testOperatorFieldsSurviveScan},
+		{"IdentityAtNewAddressIsPending", testIdentityAtNewAddressIsPending},
 		{"CredentialSecretsStayEncrypted", testCredentialSecretsStayEncrypted},
 		{"AlertsLifecycle", testAlertsLifecycle},
 		{"GroupsAndRules", testGroupsAndRules},

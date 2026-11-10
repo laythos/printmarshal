@@ -83,6 +83,11 @@ function DeviceDetailBody({ id, user }: { id: string; user: User }) {
     try { const nd = await api.post<Device>(`/api/devices/${shownId}/state`, { state }); if (alive.current) setDevice(nd) } catch (e) { if (alive.current) setNote({ tone: 'crit', text: (e as Error).message }) }
   }
   const ack = async (a: Alert) => { await api.post(`/api/alerts/${a.id}/ack`); if (alive.current) load() }
+  const resolveAddress = async (action: 'confirm' | 'dismiss') => {
+    if (!shownId) return
+    setBusy(true); setNote(null)
+    try { const nd = await api.post<Device>(`/api/devices/${shownId}/address`, { action }); if (alive.current) { setDevice(nd); load() } } catch (e) { if (alive.current) setNote({ tone: 'crit', text: (e as Error).message }) } finally { if (alive.current) setBusy(false) }
+  }
 
   if (error && !device) return <Banner tone="crit">{error}</Banner>
   if (!device) return <div className="cap" aria-busy="true">Loading…</div>
@@ -115,6 +120,11 @@ function DeviceDetailBody({ id, user }: { id: string; user: User }) {
         )}
       </div>
       {isDecommissioned(d) && <Banner tone="info"><b>This printer is decommissioned, and PrintMarshal does not contact it.</b> Everything here is the last stored data{d.lastPolled ? <>, polled {ago(d.lastPolled)}</> : ''}. Reads and writes stay off until its lifecycle state changes.</Banner>}
+      {d.pendingAddress && (
+        <Banner tone="warn" right={<>{canOperate && <><Btn sm onClick={() => resolveAddress('confirm')} disabled={busy || !shownId}>Use new address</Btn><Btn sm variant="ghost" onClick={() => resolveAddress('dismiss')} disabled={busy || !shownId}>Dismiss</Btn></>}</>}>
+          <b>Address change pending.</b> A device answering with this printer's identity was seen at <span className="mono">{d.pendingAddress}</span> {ago(d.pendingAddressSeenAt)}. PrintMarshal keeps polling <span className="mono">{d.address}</span> and sends nothing to the new address until the change is confirmed here, or until this address stops answering and the new one answers with the same identity.
+        </Banner>
+      )}
       {error && <Banner tone="crit">{error}</Banner>}
       {note && <Banner tone={note.tone}>{note.text}</Banner>}
       {topAlert && (

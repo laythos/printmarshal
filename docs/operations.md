@@ -376,6 +376,18 @@ PM_ADMIN_PASSWORD=change-me ./bin/printmarshal
 | `discovery.reverseDns.refreshInterval` | `PM_REVERSE_DNS_REFRESH_INTERVAL` | `24h` | Minimum interval between automatic refreshes on successful polls |
 | `discovery.reverseDns.forwardConfirm` | `PM_REVERSE_DNS_FORWARD_CONFIRM` | `true` | Resolve the PTR name back and accept it only when an answer matches the device's address |
 
+**When a printer changes address.** Devices are matched by serial, UUID and MAC before
+address, so a printer that moves (a DHCP lease, a VLAN change) is recognised at its new
+address. The record does not follow it straight away: the new address is held as
+*pending* and shown on the device page, and polls and credentials keep going to the
+recorded address. The record moves when an operator confirms the change on the device
+page, or on its own once the recorded address has been offline for
+`alerts.offlineAfterFailures` polls and the new address answers an identification with
+the same identifiers (that check uses the global read credentials; a printer that only
+answers a device-scoped community needs the operator's confirmation). A pending address
+that is not the printer's can be dismissed; it reappears if the other host is
+discovered again. See the "Address changes" row in `docs/security.md`.
+
 **Container note (reverse DNS):** when running in a container or Kubernetes pod, the
 default resolver is the container's (`/etc/resolv.conf`). Internal DNS zones (and
 their reverse zones) must be reachable from that resolver — on Kubernetes with

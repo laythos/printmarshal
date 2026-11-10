@@ -102,7 +102,8 @@ func (s *Postgres) migrate(ctx context.Context) error {
 	// 7 = devices.web_url_probed/web_url_override (the ALTER ... IF NOT EXISTS above).
 	// 8 = devices.identify_errors (the ALTER ... IF NOT EXISTS above).
 	// 9 = devices.field_sources (the ALTER ... IF NOT EXISTS above).
-	for _, v := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9} {
+	// 10 = devices.pending_address/pending_address_seen_at (the ALTER ... IF NOT EXISTS above).
+	for _, v := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
 		if _, err := conn.ExecContext(ctx, `INSERT INTO schema_migrations(version, applied_at) VALUES ($1, $2) ON CONFLICT DO NOTHING`, v, nowUTC()); err != nil {
 			return err
 		}

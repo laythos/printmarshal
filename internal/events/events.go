@@ -49,6 +49,7 @@ type Def struct {
 var Catalog = []Def{
 	{Type: "device.discovered", Description: "A new device was added to the inventory", Notifiable: true},
 	{Type: "device.updated", Description: "A device record or its polled state changed"},
+	{Type: "device.relocated", Description: "A device record followed its identity to a new address", Notifiable: true, Security: true},
 	{Type: "device.deleted", Description: "A device was removed", Notifiable: true, Security: true},
 	{Type: "alert.raised", Description: "An alert was raised", Notifiable: true},
 	{Type: "alert.cleared", Description: "An alert was cleared (automatically or by an operator)", Notifiable: true},

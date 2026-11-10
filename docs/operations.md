@@ -608,7 +608,7 @@ answers); keep `info` in production. Lines worth alerting on:
 | Message | Level | Meaning |
 | --- | --- | --- |
 | `printmarshal starting` | INFO | Version, listen address, DSN — first line after a (re)start |
-| `created initial admin user …` | WARN | First run; the generated password is in this line (once) |
+| `created initial admin user …` | WARN | First run; the line names the file holding the generated password (`<data dir>/initial-admin-password`), or says it came from `PM_ADMIN_PASSWORD` |
 | `http listening` | INFO | Ready to serve |
 | `trap listener ready` | INFO | The UDP trap socket is bound (`addr=`) |
 | `trap listener stopped` | ERROR | Could not bind `trap.listen` (port in use / privileged) or the socket failed |

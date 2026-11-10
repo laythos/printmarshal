@@ -2,7 +2,8 @@
 # volume for /data.  Full guide: docs/operations.md.
 #
 #   docker compose -f deploy/docker-compose.yml up -d --build
-#   docker compose -f deploy/docker-compose.yml logs -f      # first start prints the admin password
+#   docker compose -f deploy/docker-compose.yml exec printmarshal cat /data/initial-admin-password
+#                                                            # the first start writes the admin password there, not to the log
 #
 # Why `network_mode: host`?  Discovery relies on multicast (mDNS 224.0.0.251:5353,
 # WS-Discovery 239.255.255.250:3702) and printers push SNMP traps to UDP 162 /

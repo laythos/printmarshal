@@ -7,7 +7,7 @@
 #   install -m 0640 -g printmarshal deploy/systemd/printmarshal.env.example /etc/printmarshal/printmarshal.env
 #   install -m 0644 deploy/systemd/printmarshal.service /etc/systemd/system/printmarshal.service
 #   systemctl daemon-reload && systemctl enable --now printmarshal
-#   journalctl -u printmarshal -f        # first start prints the admin password unless PM_ADMIN_PASSWORD is set
+#   cat /var/lib/printmarshal/initial-admin-password   # written on the first start unless PM_ADMIN_PASSWORD is set; delete it after signing in
 #
 # /var/lib/printmarshal (StateDirectory) is created and owned automatically.
 

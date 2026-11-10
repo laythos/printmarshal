@@ -81,7 +81,8 @@ your network unless you configure a notifier or an export.
 
 ## Quick start
 
-Requirements: Go 1.27.3+ (matching `go.mod`) and Node 20+ to build the UI, or Docker.
+Requirements: Go 1.27.3+ (matching `go.mod`) and Node 22+ to build the UI (what CI and the
+Dockerfile use), or Docker.
 
 ```bash
 make web        # build the SPA into internal/web/dist (once, or after UI changes)

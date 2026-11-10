@@ -8,11 +8,14 @@ PrintMarshal {{ .Chart.AppVersion }} is being deployed as release "{{ .Release.N
 {{- if or .Values.secrets.adminPassword .Values.secrets.existingSecret }}
    Sign in as "admin" with the password from Secret "{{ include "printmarshal.secretName" . }}" (key PM_ADMIN_PASSWORD).
 {{- else }}
-   No password was supplied, so one was generated and printed ONCE in the log:
+   No password was supplied, so one was generated on the first start and written
+   to /data/initial-admin-password on the data volume (mode 0600; it is not in the log):
 
-     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "printmarshal.fullname" . }} | grep "initial admin"
+     kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "printmarshal.fullname" . }} -- cat /data/initial-admin-password
 
-   Sign in as "admin" and change it under your profile.
+   Sign in as "admin", change it under your profile, then delete the file:
+
+     kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "printmarshal.fullname" . }} -- rm /data/initial-admin-password
 {{- end }}
 
 3. Reach the UI

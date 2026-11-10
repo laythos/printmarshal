@@ -81,7 +81,7 @@ spec:
                 secretKeyRef:
                   name: printmarshal-secrets
                   key: PM_ADMIN_PASSWORD
-                  optional: true          # omitted -> generated and printed in the log on first start
+                  optional: true          # omitted -> generated into /data/initial-admin-password on first start (kubectl exec ... cat it)
             - name: PM_SECRET_KEY
               valueFrom:
                 secretKeyRef:

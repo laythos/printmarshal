@@ -81,7 +81,9 @@ secrets:
   # the chart creates none.
   existingSecret: ""
   # Initial admin password; only read on the first start with an empty database.
-  # Empty: a random password is generated and printed in the log.
+  # Empty: a random password is generated on the first start and written to
+  # /data/initial-admin-password on the data volume (the NOTES printed after
+  # install show how to read it); it is not printed in the log.
   adminPassword: ""
   # Base64 of 32 random bytes; encrypts stored device credentials.  Empty with
   # generateSecretKey=true: generated once at install and preserved across

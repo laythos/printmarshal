@@ -404,6 +404,8 @@ DNS server.
 | `trap.listen` | `PM_TRAP_LISTEN` | `0.0.0.0:1162` | UDP listen address; 162 needs root or `CAP_NET_BIND_SERVICE` |
 | `trap.allowedSources[]` | — | any | CIDRs / addresses traps are accepted from; traps are acted on only when they come from a known device's address in any case |
 | `trap.ratePerMinute` | — | `60` | Traps handled per source address per minute; excess is dropped (one log line per source per minute) |
+| `trap.totalPerMinute` | — | `600` | Traps handled per minute over all sources together; excess is dropped. Raise it for a fleet whose printers legitimately send more |
+| `trap.maxSources` | — | `10000` | Source addresses the listener keeps rate state for at once; the least recently seen are forgotten first |
 
 ### Alerts (`alerts`), jobs, auth, telemetry
 

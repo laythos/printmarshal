@@ -20,6 +20,7 @@ var ErrNoPendingRelocation = errors.New("no pending address change on this devic
 // DeviceFilter selects devices for listing (spec §8.2 search/sort/filter).
 type DeviceFilter struct {
 	Q        string // free text over name, model, serial, address, location, asset tag
+	Address  string // exact address match (indexed); for lookups by a packet's source
 	State    string
 	Make     string
 	Model    string

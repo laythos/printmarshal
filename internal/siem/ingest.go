@@ -183,14 +183,9 @@ func (in *Ingest) deviceFor(ctx context.Context, ip string) string {
 	}
 	in.mu.Unlock()
 	id := ""
-	devs, err := in.store.ListDevices(ctx, store.DeviceFilter{Q: ip, IncludeDecommissioned: true})
-	if err == nil {
-		for _, d := range devs {
-			if d.Address == ip {
-				id = d.ID
-				break
-			}
-		}
+	devs, err := in.store.ListDevices(ctx, store.DeviceFilter{Address: ip, IncludeDecommissioned: true})
+	if err == nil && len(devs) > 0 {
+		id = devs[0].ID
 	}
 	in.mu.Lock()
 	in.cache[ip] = cacheEntry{id: id, at: time.Now()}

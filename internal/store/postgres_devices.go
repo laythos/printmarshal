@@ -197,6 +197,10 @@ func buildDeviceWherePG(f DeviceFilter) (string, []any) {
 		where = append(where, effectiveSeveritySQL+" = ?")
 		args = append(args, f.Severity)
 	}
+	if f.Address != "" {
+		where = append(where, "address = ?")
+		args = append(args, f.Address)
+	}
 	if f.Q != "" {
 		q := "%" + strings.ToLower(f.Q) + "%"
 		where = append(where, `(lower(display_name) LIKE ? OR lower(sys_name) LIKE ? OR lower(hostname) LIKE ? OR lower(model) LIKE ?

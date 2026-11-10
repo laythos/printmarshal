@@ -231,6 +231,24 @@ func testGroupsAndRules(t *testing.T, s testStore) {
 	if len(found) != 1 || found[0].ID != d2.ID {
 		t.Errorf("search = %+v", found)
 	}
+	// Address is an exact match: a prefix or a substring of an address finds nothing.
+	if byAddr, _ := s.ListDevices(ctx, DeviceFilter{Address: "10.2.0.5"}); len(byAddr) != 1 || byAddr[0].ID != d2.ID {
+		t.Errorf("by address = %+v", byAddr)
+	}
+	for _, partial := range []string{"10.2.0", "0.2.0.5", "10.2.0.50"} {
+		if byAddr, _ := s.ListDevices(ctx, DeviceFilter{Address: partial}); len(byAddr) != 0 {
+			t.Errorf("address %q matched %+v", partial, byAddr)
+		}
+	}
+	if _, err := s.SetDeviceState(ctx, d2.ID, model.StateDecommissioned); err != nil {
+		t.Fatal(err)
+	}
+	if byAddr, _ := s.ListDevices(ctx, DeviceFilter{Address: "10.2.0.5"}); len(byAddr) != 0 {
+		t.Errorf("by address after decommission = %+v", byAddr)
+	}
+	if byAddr, _ := s.ListDevices(ctx, DeviceFilter{Address: "10.2.0.5", IncludeDecommissioned: true}); len(byAddr) != 1 {
+		t.Errorf("by address including decommissioned = %+v", byAddr)
+	}
 }
 
 func testJobsAndTelemetry(t *testing.T, s testStore) {

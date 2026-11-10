@@ -201,6 +201,7 @@ func run(cfgPath string) error {
 			return err
 		}
 		tl.Allowed, tl.RatePerMinute = allowed, cfg.Trap.RatePerMinute
+		tl.TotalPerMinute, tl.MaxSources = cfg.Trap.TotalPerMinute, cfg.Trap.MaxSources
 		go func() {
 			if err := tl.Run(ctx); err != nil {
 				log.Error("trap listener stopped", "err", err)

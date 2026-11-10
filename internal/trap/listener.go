@@ -33,15 +33,35 @@ type Listener struct {
 	Allowed []*net.IPNet
 	// RatePerMinute caps handled traps per source address (0 = 60).
 	RatePerMinute int
+	// TotalPerMinute caps handled traps per minute across every source
+	// (0 = 600). The per-source cap alone bounds nothing when the sources
+	// vary, as they can on UDP.
+	TotalPerMinute int
+	// MaxSources caps the source addresses tracked at once (0 = 10000);
+	// the least recently seen are forgotten first.
+	MaxSources int
 
-	mu     sync.Mutex
-	seen   map[string][]time.Time
-	denied map[string]time.Time // last time a drop was logged per source
+	now       func() time.Time
+	mu        sync.Mutex
+	seen      map[string][]time.Time
+	total     []time.Time
+	denied    map[string]time.Time // last time a drop was logged per source
+	lastSweep time.Time
+	// deniedFull is the last time a drop went unlogged because the denied
+	// table was full; one line a minute says so.
+	deniedFull time.Time
 }
+
+// Defaults for the limiter fields when they are left at zero.
+const (
+	DefaultRatePerMinute  = 60
+	DefaultTotalPerMinute = 600
+	DefaultMaxSources     = 10000
+)
 
 // New returns a listener bound to addr (e.g. "0.0.0.0:162"; ports below 1024 need privileges).
 func New(addr string, h Handler, log *slog.Logger) *Listener {
-	return &Listener{addr: addr, h: h, log: log, seen: map[string][]time.Time{}, denied: map[string]time.Time{}}
+	return &Listener{addr: addr, h: h, log: log, now: time.Now, seen: map[string][]time.Time{}, denied: map[string]time.Time{}}
 }
 
 // ParseSources turns CIDRs or bare addresses into networks.
@@ -70,7 +90,35 @@ func ParseSources(list []string) ([]*net.IPNet, error) {
 	return out, nil
 }
 
-// accept applies the source allow-list and the per-source rate limit (audit A13).
+func (l *Listener) limits() (perSource, total, maxSources int) {
+	perSource, total, maxSources = l.RatePerMinute, l.TotalPerMinute, l.MaxSources
+	if perSource <= 0 {
+		perSource = DefaultRatePerMinute
+	}
+	if total <= 0 {
+		total = DefaultTotalPerMinute
+	}
+	if maxSources <= 0 {
+		maxSources = DefaultMaxSources
+	}
+	return perSource, total, maxSources
+}
+
+// recent keeps the timestamps of the last minute, in place.
+func recent(ts []time.Time, now time.Time) []time.Time {
+	keep := ts[:0]
+	for _, t := range ts {
+		if now.Sub(t) < time.Minute {
+			keep = append(keep, t)
+		}
+	}
+	return keep
+}
+
+// accept applies the source allow-list, the per-source rate limit (audit
+// A13) and the overall rate limit. The tables it keeps are bounded: stale
+// entries go once a minute, and the source table forgets the least recently
+// seen address when it is full.
 func (l *Listener) accept(ip net.IP) bool {
 	if len(l.Allowed) > 0 {
 		ok := false
@@ -85,42 +133,97 @@ func (l *Listener) accept(ip net.IP) bool {
 			return false
 		}
 	}
-	limit := l.RatePerMinute
-	if limit <= 0 {
-		limit = 60
-	}
-	now := time.Now()
+	perSource, total, maxSources := l.limits()
+	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	key := ip.String()
-	keep := l.seen[key][:0]
-	for _, t := range l.seen[key] {
-		if now.Sub(t) < time.Minute {
-			keep = append(keep, t)
-		}
+	if now.Sub(l.lastSweep) >= time.Minute {
+		l.sweepLocked(now)
 	}
-	if len(keep) >= limit {
+	key := ip.String()
+	keep := recent(l.seen[key], now)
+	if len(keep) >= perSource {
 		l.seen[key] = keep
-		l.dropLocked(key, "rate limit exceeded")
+		l.dropLocked(key, "rate limit exceeded", now)
 		return false
 	}
+	l.total = recent(l.total, now)
+	if len(l.total) >= total {
+		if len(keep) == 0 {
+			delete(l.seen, key)
+		} else {
+			l.seen[key] = keep
+		}
+		l.dropLocked(key, "overall rate limit exceeded", now)
+		return false
+	}
+	if len(keep) == 0 {
+		for len(l.seen) >= maxSources {
+			l.evictLocked()
+		}
+	}
 	l.seen[key] = append(keep, now)
+	l.total = append(l.total, now)
 	return true
 }
 
+// sweepLocked drops every entry older than a minute from both tables.
+func (l *Listener) sweepLocked(now time.Time) {
+	for k, ts := range l.seen {
+		if ts = recent(ts, now); len(ts) == 0 {
+			delete(l.seen, k)
+		} else {
+			l.seen[k] = ts
+		}
+	}
+	for k, t := range l.denied {
+		if now.Sub(t) >= time.Minute {
+			delete(l.denied, k)
+		}
+	}
+	l.lastSweep = now
+}
+
+// evictLocked forgets the source whose last trap is the oldest.
+func (l *Listener) evictLocked() {
+	oldest, found := "", false
+	var at time.Time
+	for k, ts := range l.seen {
+		if last := ts[len(ts)-1]; !found || last.Before(at) {
+			oldest, at, found = k, last, true
+		}
+	}
+	if found {
+		delete(l.seen, oldest)
+	}
+}
+
 func (l *Listener) drop(src, why string) {
+	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.dropLocked(src, why)
+	if now.Sub(l.lastSweep) >= time.Minute {
+		l.sweepLocked(now)
+	}
+	l.dropLocked(src, why, now)
 }
 
 // dropLocked logs at most one drop per source per minute so a flood cannot
-// flood the log too.
-func (l *Listener) dropLocked(src, why string) {
-	if t, ok := l.denied[src]; ok && time.Since(t) < time.Minute {
+// flood the log too. The table of logged sources is bounded as well: when
+// it is full, drops from further sources are summed up in one line a minute.
+func (l *Listener) dropLocked(src, why string, now time.Time) {
+	if t, ok := l.denied[src]; ok {
+		if now.Sub(t) < time.Minute {
+			return
+		}
+	} else if _, _, maxSources := l.limits(); len(l.denied) >= maxSources {
+		if now.Sub(l.deniedFull) >= time.Minute {
+			l.deniedFull = now
+			l.log.Warn("trap drops from further sources not logged individually", "sources", len(l.denied), "reason", why)
+		}
 		return
 	}
-	l.denied[src] = time.Now()
+	l.denied[src] = now
 	l.log.Warn("trap dropped", "source", src, "reason", why)
 }
 

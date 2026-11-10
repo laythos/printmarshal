@@ -62,6 +62,12 @@ type Config struct {
 		AllowedSources []string `json:"allowedSources,omitempty"`
 		// RatePerMinute caps traps handled per source address (0 = default 60).
 		RatePerMinute int `json:"ratePerMinute,omitempty"`
+		// TotalPerMinute caps traps handled per minute over all sources
+		// (0 = default 600).
+		TotalPerMinute int `json:"totalPerMinute,omitempty"`
+		// MaxSources caps the source addresses the listener keeps rate
+		// state for (0 = default 10000); the least recently seen go first.
+		MaxSources int `json:"maxSources,omitempty"`
 	} `json:"trap"`
 
 	Alerts struct {

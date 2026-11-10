@@ -753,7 +753,8 @@ func (s *Service) reconcileTrapAlerts(ctx context.Context, dev *model.Device) {
 // (spec §8.3). Informational traps (severity ok) raise nothing but may clear
 // the alert of the condition they end.
 func (s *Service) HandleTrap(ctx context.Context, sourceIP string, description string, severity model.Severity, varbinds map[string]string) {
-	devs, err := s.Store.ListDevices(ctx, store.DeviceFilter{Q: sourceIP, IncludeDecommissioned: true})
+	// An exact, indexed lookup: this runs once per accepted packet.
+	devs, err := s.Store.ListDevices(ctx, store.DeviceFilter{Address: sourceIP, IncludeDecommissioned: true})
 	if err != nil {
 		return
 	}
@@ -761,7 +762,7 @@ func (s *Service) HandleTrap(ctx context.Context, sourceIP string, description s
 	// in service is the one that sent this.
 	var dev *model.Device
 	for _, d := range devs {
-		if d.Address == sourceIP && (dev == nil || dev.Decommissioned()) {
+		if dev == nil || dev.Decommissioned() {
 			dev = d
 		}
 	}

@@ -216,7 +216,13 @@ func (s *Server) require(min model.Role, next http.HandlerFunc) http.Handler {
 			writeErr(w, http.StatusForbidden, fmt.Sprintf("requires %s role", min))
 			return
 		}
-		r = r.WithContext(auth.WithUser(r.Context(), u))
+		ctx := auth.WithUser(r.Context(), u)
+		if len(u.Scope) > 0 {
+			// Resolved once per request; every check below and in the
+			// handler reads the same set (scope.go).
+			ctx = withScope(ctx, s.resolveScope(ctx))
+		}
+		r = r.WithContext(ctx)
 		if !s.authorize(w, r) { // token restrictions and group scope (scope.go)
 			return
 		}
@@ -1546,8 +1552,10 @@ func (s *Server) listDrivers(w http.ResponseWriter, r *http.Request) {
 
 // streamScope is the live stream's per-subscriber filter: nil for unscoped
 // principals, otherwise only events about devices in the principal's groups.
+// The hub calls it again every minute, so it resolves the groups afresh
+// rather than reading the set cached on the upgrade request.
 func (s *Server) streamScope(r *http.Request) func(data any) bool {
-	set := s.scopeDeviceIDs(r.Context())
+	set := s.resolveScope(r.Context())
 	if set == nil {
 		return nil
 	}

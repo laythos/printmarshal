@@ -290,9 +290,34 @@ func bodyTargets(r *http.Request) (deviceIDs []string, groupIDs []string) {
 	return deviceIDs, groupIDs
 }
 
-// scopeDeviceIDs resolves the principal's groups (static members or rule
-// matches) to the set of device ids it may touch. nil means "unscoped".
+// scopeKey carries a request's resolved scope set through its context, so
+// the several checks made on one request (the path, the body, the
+// resource, the list filter) resolve it once: a rule group in the scope
+// means reading the whole device table to resolve it.
+type scopeKey struct{}
+
+type scopeCache struct{ set map[string]bool }
+
+// withScope stores a resolved scope set on ctx (require does this).
+func withScope(ctx context.Context, set map[string]bool) context.Context {
+	return context.WithValue(ctx, scopeKey{}, &scopeCache{set: set})
+}
+
+// scopeDeviceIDs returns the set of device ids the principal on ctx may
+// touch: the one resolved for this request when there is one, otherwise it
+// resolves it now. nil means "unscoped".
 func (s *Server) scopeDeviceIDs(ctx context.Context) map[string]bool {
+	if c, ok := ctx.Value(scopeKey{}).(*scopeCache); ok {
+		return c.set
+	}
+	return s.resolveScope(ctx)
+}
+
+// resolveScope reads the principal's groups (static members or rule
+// matches) and returns the set of device ids it may touch, fresh from the
+// store. nil means "unscoped". Long-lived callers (the live stream's
+// periodic re-check) use this rather than the request's cached set.
+func (s *Server) resolveScope(ctx context.Context) map[string]bool {
 	u := auth.UserFrom(ctx)
 	if u == nil || len(u.Scope) == 0 {
 		return nil

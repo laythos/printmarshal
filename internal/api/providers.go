@@ -110,7 +110,7 @@ func (s *Server) externalLogin(r *http.Request, username, password string) (stri
 	if len(providers) == 0 {
 		return "", nil, "", errInvalidCredentials
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	boundTo := ""
 	if existing, _, err := s.Store.GetUserByName(ctx, strings.TrimSpace(username)); err == nil {
 		if !existing.IsExternal() {

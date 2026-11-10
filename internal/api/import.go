@@ -108,7 +108,7 @@ func (s *Server) importCSV(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.imports.Store(key, &importPayload{table: table, replace: replace, user: u, ip: clientIP(r)})
+	s.imports.Store(key, &importPayload{table: table, replace: replace, user: u, ip: s.clientIP(r)})
 	cols := replaceColumns(replace)
 	j, err := s.Fleet.Jobs.Submit(r.Context(), &model.Job{Type: importJobType, CreatedBy: actor(r),
 		Target: map[string]any{"rows": len(table.Records)},

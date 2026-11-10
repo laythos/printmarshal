@@ -1,5 +1,7 @@
 {
   "listen": ":8080",
+  "trustedProxies": [],
+  "_trustedProxies_note": "reverse proxies (CIDRs or addresses) whose X-Forwarded-For names the client for sign-in throttling, the public board limit and the audit log; empty = the TCP peer is the client",
   "dataDir": "/data",
   "database": "sqlite",
   "dsn": "/data/printmarshal.db",

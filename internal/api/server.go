@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -49,7 +50,10 @@ type Server struct {
 	Version    string
 
 	logins *loginLimiter
-	pub    *publicState // public status board: cache and rate limiter (public.go)
+	// proxies are the trusted reverse proxies (Cfg.TrustedProxies, parsed in
+	// Handler); clientIP reads X-Forwarded-For only behind one of them.
+	proxies []*net.IPNet
+	pub     *publicState // public status board: cache and rate limiter (public.go)
 	http   *httpStats
 	oidc   *oidcState // lazily discovered OIDC provider (oidc.go)
 	saml   *samlState // lazily built SAML service provider (saml.go)
@@ -68,6 +72,13 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	if s.logins == nil {
 		s.logins = newLoginLimiter(s.Cfg.Auth.LoginFailuresPerMinute)
+	}
+	if proxies, err := ParseTrustedProxies(s.Cfg.TrustedProxies); err != nil {
+		// main validates the list before serving; here the bad entry is
+		// skipped, which trusts nothing it should not.
+		s.Log.Error("trustedProxies ignored", "err", err)
+	} else {
+		s.proxies = proxies
 	}
 	if s.pub == nil {
 		s.pub = newPublicState()
@@ -313,7 +324,7 @@ func actor(r *http.Request) string {
 }
 
 func (s *Server) audit(ctx context.Context, r *http.Request, action, target string, before, after map[string]any, result string) {
-	s.auditAs(ctx, actor(r), clientIP(r), action, target, before, after, result)
+	s.auditAs(ctx, actor(r), s.clientIP(r), action, target, before, after, result)
 }
 
 // auditAs writes an audit entry; failures are logged loudly rather than
@@ -337,7 +348,7 @@ func (s *Server) security(ctx context.Context, r *http.Request, typ, who, detail
 // also carries before and after. They stay in the audit log; the published
 // event, which exporters forward off the system, is the same as security's.
 func (s *Server) securityChange(ctx context.Context, r *http.Request, typ, who, detail string, before, after map[string]any, result string) {
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if s.Bus != nil {
 		s.Bus.PublishFrom(model.Event{Type: typ, Data: map[string]any{"user": who, "detail": detail, "result": result, "ip": ip, "summary": who + ": " + detail}}, events.Origin{Source: "operator", Actor: who, IP: ip})
 	}
@@ -367,7 +378,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if s.logins.Blocked(ip) {
 		s.security(r.Context(), r, "auth.failed", body.Username, "rate limited", "throttled")
 		w.Header().Set("Retry-After", "60")

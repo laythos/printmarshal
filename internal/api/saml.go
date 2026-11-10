@@ -137,7 +137,7 @@ func (s *Server) samlStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) samlACS(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if s.logins.Blocked(ip) {
 		s.security(r.Context(), r, "auth.failed", "saml", "rate limited", "throttled")
 		s.ssoFail(w, r, "too many failed sign-ins; try again in a minute")

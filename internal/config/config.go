@@ -16,8 +16,13 @@ import (
 
 // Config is the full runtime configuration.
 type Config struct {
-	Listen   string `json:"listen"`   // HTTP listen address
-	DataDir  string `json:"dataDir"`  // SQLite DB, key file
+	Listen string `json:"listen"` // HTTP listen address
+	// TrustedProxies are the reverse proxies (CIDRs or addresses) whose
+	// X-Forwarded-For header gives the client address for sign-in
+	// throttling, the public board's rate limit and the audit log. Empty:
+	// the TCP peer is the client and the header is ignored.
+	TrustedProxies []string `json:"trustedProxies,omitempty"`
+	DataDir        string   `json:"dataDir"` // SQLite DB, key file
 	Database string `json:"database"` // "sqlite" (default) | "postgres"
 	DSN      string `json:"dsn"`      // SQLite file path (defaults to <dataDir>/printmarshal.db) or a postgres:// URL
 
@@ -406,6 +411,9 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	envStr("PM_LISTEN", &c.Listen)
+	if v := os.Getenv("PM_TRUSTED_PROXIES"); v != "" {
+		c.TrustedProxies = strings.Split(v, ",")
+	}
 	envStr("PM_DATA_DIR", &c.DataDir)
 	envStr("PM_DATABASE", &c.Database)
 	envStr("PM_DSN", &c.DSN)

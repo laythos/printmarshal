@@ -288,6 +288,7 @@ example file: [`deploy/printmarshal.example.json`](../deploy/printmarshal.exampl
 | JSON | Env | Default | Meaning |
 | --- | --- | --- | --- |
 | `listen` | `PM_LISTEN` | `:8080` | HTTP listen address for UI and API |
+| `trustedProxies[]` | `PM_TRUSTED_PROXIES` (comma separated) | none | Reverse proxies (CIDRs or addresses) whose `X-Forwarded-For` header names the client for sign-in throttling, the public board's rate limit and the audit log. Set it when a proxy is in front, or every user shares the proxy's address and budget. The header is ignored from any other peer |
 | `dataDir` | `PM_DATA_DIR` | `./data` | Directory for the database, `secret.key` and `firmware/` |
 | `database` | `PM_DATABASE` | `sqlite` | Datastore: `sqlite` (single file in the data directory) or `postgres` (see [PostgreSQL](#postgresql)) |
 | `dsn` | `PM_DSN` | `<dataDir>/printmarshal.db` | SQLite file path, or the PostgreSQL connection URL when `database` is `postgres` |
@@ -486,9 +487,14 @@ only sees printers on L2 segments the server has an interface in. For other segm
 use active scans (`discovery.targets`) or a per-segment deployment.
 
 Reverse proxy: terminate TLS there, forward to `127.0.0.1:8080`, pass `Upgrade` /
-`Connection` headers for `/api/stream`, and set `PM_SECURE_COOKIES=true`. The server
-does not read `X-Forwarded-*` headers, so audit entries record the proxy's address
-unless the proxy is transparent.
+`Connection` headers for `/api/stream`, set `PM_SECURE_COOKIES=true`, and list the
+proxy in `trustedProxies` (`PM_TRUSTED_PROXIES=127.0.0.1`). The server then takes the
+client address from the proxy's `X-Forwarded-For` header (the nearest hop that is not a
+trusted proxy) for sign-in throttling, the public board's rate limit and the audit log.
+Without that setting the header is ignored and every user arrives as the proxy's
+address: ten failed sign-ins by anyone throttle sign-in for everyone for a minute, and
+the public board's budget is shared by its whole audience. Make sure the proxy
+overwrites, not appends to, the header it receives from clients.
 
 ## The data directory and the secret key
 
@@ -706,6 +712,8 @@ HTTP, or the proxy strips the `Cookie` header on the WebSocket upgrade.
       Ingress, forward to `127.0.0.1:8080` / the ClusterIP, keep WebSocket upgrade on.
 - [ ] **`PM_SECURE_COOKIES=true`** once TLS is in place (cookies are already `HttpOnly`
       and `SameSite=Strict`).
+- [ ] **`PM_TRUSTED_PROXIES`** set to the proxy's address, so that sign-in throttling and
+      the public board's rate limit apply per client rather than to the proxy as a whole.
 - [ ] **Secrets from the platform**: `PM_SECRET_KEY` and `PM_ADMIN_PASSWORD` from a
       Kubernetes Secret, a 0600 `env_file`, or the systemd `EnvironmentFile`; never in
       the image, the ConfigMap, or a committed compose file. SMTP passwords only via

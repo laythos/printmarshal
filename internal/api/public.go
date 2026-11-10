@@ -717,7 +717,7 @@ func (s *Server) buildPublicSnapshot(ctx context.Context) (*boardSnapshot, error
 
 // getPublicStatus serves GET /api/public/status and /api/public/status/{slug}.
 func (s *Server) getPublicStatus(w http.ResponseWriter, r *http.Request) {
-	if !s.pub.limiter.Allow(clientIP(r)) {
+	if !s.pub.limiter.Allow(s.clientIP(r)) {
 		w.Header().Set("Retry-After", "60")
 		writeErr(w, http.StatusTooManyRequests, "too many requests; try again in a minute")
 		return

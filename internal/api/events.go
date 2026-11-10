@@ -91,7 +91,7 @@ func (s *Server) publish(r *http.Request, e model.Event) {
 	if s.Bus != nil {
 		origin := events.System
 		if r != nil {
-			origin = events.Origin{Source: "operator", Actor: actor(r), IP: clientIP(r)}
+			origin = events.Origin{Source: "operator", Actor: actor(r), IP: s.clientIP(r)}
 		}
 		s.Bus.PublishFrom(e, origin)
 		return

@@ -30,7 +30,9 @@ Authorization is the role rank (viewer < operator < admin) plus an optional
 - A password change ends every other session of the account. Deleting a user
   ends all of them.
 - Failed sign-ins are rate limited per source address
-  (`auth.loginFailuresPerMinute`, default 10) and published as `auth.failed`.
+  (`auth.loginFailuresPerMinute`, default 10) and published as `auth.failed`. Behind
+  a reverse proxy, list it in `trustedProxies` so the address is the client's (from
+  `X-Forwarded-For`) rather than the proxy's; see `docs/operations.md`.
 
 ## API tokens (service accounts)
 

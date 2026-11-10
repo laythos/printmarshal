@@ -83,6 +83,9 @@ func run(cfgPath string) error {
 		return err
 	}
 	log.Info("printmarshal starting", "version", version, "listen", cfg.Listen, "database", cfg.Database, "dsn", config.RedactDSN(cfg.DSN))
+	if _, err := api.ParseTrustedProxies(cfg.TrustedProxies); err != nil {
+		return err
+	}
 
 	key, err := secrets.LoadOrCreateKey(os.Getenv("PM_SECRET_KEY"), filepath.Join(cfg.DataDir, "secret.key"))
 	if err != nil {

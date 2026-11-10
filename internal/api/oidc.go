@@ -112,7 +112,7 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	clearFlow := func() {
 		http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: "", Path: "/api/auth/oidc/", HttpOnly: true, Secure: s.Cfg.Auth.SecureCookies, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if s.logins.Blocked(ip) {
 		s.security(r.Context(), r, "auth.failed", "oidc", "rate limited", "throttled")
 		s.oidcFail(w, r, "too many failed sign-ins; try again in a minute")

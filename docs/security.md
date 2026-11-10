@@ -191,6 +191,7 @@ printers it manages.
 | Live stream lifetime | Every open stream re-validates its session once a minute and closes when the session was revoked or expired. | — |
 | Password change | Ends every other session of the account and records `auth.session.revoked`. | — |
 | Sign-in throttling | After 10 failed sign-ins from one address within a minute, further attempts get `429` for a minute; failures are recorded as `auth.failed`. | `auth.loginFailuresPerMinute` |
+| Client address | The TCP peer, unless the peer is a listed trusted proxy: then the nearest `X-Forwarded-For` hop that is not itself a trusted proxy. Used for sign-in throttling, the public board's rate limit and the audit log. The header is ignored from any other peer, so a client cannot pick its own address. | `trustedProxies` / `PM_TRUSTED_PROXIES` |
 | Authorization denials | A `403` from the role check is recorded as `auth.denied` with user, method and path. | — |
 | Audit writes | A failed audit write is logged at error level with the full action; every audit entry is also published as `audit.recorded` on the event bus for exporters. | — |
 | Initial admin password | When `PM_ADMIN_PASSWORD` is unset the generated password is written to `<dataDir>/initial-admin-password` (mode 0600) instead of the log. Delete the file after the first login. | `PM_ADMIN_PASSWORD` |
@@ -200,8 +201,9 @@ printers it manages.
 
 TLS termination is expected at a reverse proxy or ingress (see
 `docs/operations.md`); the proxy must forward the `Host` header unchanged so
-the same-origin check on the stream keeps working. Client addresses used for
-throttling are the TCP peer, so a proxy should apply its own sign-in rate limit.
+the same-origin check on the stream keeps working. List the proxy in
+`trustedProxies`: otherwise every client arrives as the proxy's address, and the
+sign-in and public board limits then throttle all of them together.
 
 ### Device writes over IPP
 

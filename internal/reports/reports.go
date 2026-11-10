@@ -40,6 +40,10 @@ type Params struct {
 	Group  string    // group id (static or rule), optional
 	Device string    // device id, optional
 	TopN   int       // top-N lists; default 10
+	// Only restricts the report to these device ids (the caller's group
+	// scope); nil = no restriction. A group or device outside it yields
+	// nothing, and an unqualified report covers the set rather than the fleet.
+	Only map[string]bool
 }
 
 // Range describes the resolved range and scope echoed in every report.
@@ -109,6 +113,15 @@ func (s *Service) resolve(ctx context.Context, p Params) (*scope, error) {
 	if err != nil {
 		return nil, err
 	}
+	if p.Only != nil {
+		kept := make([]*model.Device, 0, len(all))
+		for _, d := range all {
+			if p.Only[d.ID] {
+				kept = append(kept, d)
+			}
+		}
+		all = kept
+	}
 	groups, err := s.Store.ListGroups(ctx)
 	if err != nil {
 		return nil, err
@@ -119,6 +132,9 @@ func (s *Service) resolve(ctx context.Context, p Params) (*scope, error) {
 		d, err := s.Store.GetDevice(ctx, p.Device)
 		if err != nil {
 			return nil, err
+		}
+		if p.Only != nil && !p.Only[d.ID] {
+			return nil, store.ErrNotFound
 		}
 		sc.devices = []*model.Device{d}
 		sc.ids = []string{d.ID}
@@ -136,6 +152,14 @@ func (s *Service) resolve(ctx context.Context, p Params) (*scope, error) {
 		}
 	default:
 		sc.devices = all
+		if p.Only != nil {
+			// A non-nil id list: the aggregates then select these devices
+			// rather than every device.
+			sc.ids = make([]string, 0, len(all))
+			for _, d := range all {
+				sc.ids = append(sc.ids, d.ID)
+			}
+		}
 	}
 	for _, d := range sc.devices {
 		sc.byID[d.ID] = d

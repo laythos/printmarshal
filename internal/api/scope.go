@@ -322,6 +322,20 @@ func (s *Server) scopeDeviceIDs(ctx context.Context) map[string]bool {
 	return set
 }
 
+// scopeHasGroup reports whether gid is one of the groups a scoped principal
+// was given. Unscoped principals may name any group.
+func scopeHasGroup(u *model.User, gid string) bool {
+	if u == nil || len(u.Scope) == 0 {
+		return true
+	}
+	for _, g := range u.Scope {
+		if g == gid {
+			return true
+		}
+	}
+	return false
+}
+
 // allowedDevice reports whether the principal on ctx may act on deviceID.
 func (s *Server) allowedDevice(ctx context.Context, deviceID string) bool {
 	set := s.scopeDeviceIDs(ctx)

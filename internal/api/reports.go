@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"printmarshal/internal/auth"
 	"printmarshal/internal/csvsafe"
 	"printmarshal/internal/model"
 	"printmarshal/internal/reports"
@@ -117,6 +118,26 @@ func reportParams(r *http.Request) (reports.Params, error) {
 	return p, nil
 }
 
+// reportScope applies the principal's group scope to a report request: a
+// device or group named in the query must be inside the scope (403
+// otherwise, as for the device routes), and a report over no particular
+// group or device covers the scope rather than the fleet. Unscoped
+// principals are unaffected.
+func (s *Server) reportScope(w http.ResponseWriter, r *http.Request, p *reports.Params) bool {
+	u := auth.UserFrom(r.Context())
+	if u == nil || len(u.Scope) == 0 {
+		return true
+	}
+	if p.Device != "" && !s.allowedDevice(r.Context(), p.Device) {
+		return s.denyScope(w, r, u, r.URL.Path+" (device "+p.Device+")")
+	}
+	if p.Group != "" && !scopeHasGroup(u, p.Group) {
+		return s.denyScope(w, r, u, r.URL.Path+" (group "+p.Group+")")
+	}
+	p.Only = s.scopeDeviceIDs(r.Context())
+	return true
+}
+
 // report builds a handler for one report: JSON by default, CSV of the chosen
 // table with ?format=csv (&table=<name>).
 func (s *Server) report(name string, run func(context.Context, *reports.Service, reports.Params) (reportResult, error)) http.HandlerFunc {
@@ -129,6 +150,9 @@ func (s *Server) report(name string, run func(context.Context, *reports.Service,
 		p, err := reportParams(r)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !s.reportScope(w, r, &p) {
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)

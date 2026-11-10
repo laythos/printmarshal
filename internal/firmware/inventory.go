@@ -16,6 +16,9 @@ type InventoryFilter struct {
 	Model   string
 	GroupID string
 	Q       string
+	// Only restricts the inventory to these device ids (the caller's group
+	// scope); nil = no restriction.
+	Only map[string]bool
 }
 
 // InventoryEntry is one make/model/version cell of the fleet.
@@ -66,27 +69,36 @@ func latestFor(pkgs []*model.FirmwarePackage, dev *model.Device) *model.Firmware
 
 func (s *Service) devicesFor(ctx context.Context, f InventoryFilter) ([]*model.Device, error) {
 	df := store.DeviceFilter{Make: f.Make, Model: f.Model, Q: f.Q}
+	var rule *model.GroupRule
 	if f.GroupID != "" {
 		g, err := s.Store.GetGroup(ctx, f.GroupID)
 		if err != nil {
 			return nil, err
 		}
 		if g.Kind == "rule" {
-			all, err := s.Store.ListDevices(ctx, df)
-			if err != nil {
-				return nil, err
-			}
-			out := []*model.Device{}
-			for _, d := range all {
-				if store.MatchRule(g.Rule, d) {
-					out = append(out, d)
-				}
-			}
-			return out, nil
+			rule = g.Rule
+		} else {
+			df.GroupIDs = []string{f.GroupID}
 		}
-		df.GroupIDs = []string{f.GroupID}
 	}
-	return s.Store.ListDevices(ctx, df)
+	all, err := s.Store.ListDevices(ctx, df)
+	if err != nil {
+		return nil, err
+	}
+	if rule == nil && f.Only == nil {
+		return all, nil
+	}
+	out := []*model.Device{}
+	for _, d := range all {
+		if rule != nil && !store.MatchRule(rule, d) {
+			continue
+		}
+		if f.Only != nil && !f.Only[d.ID] {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out, nil
 }
 
 // Inventory groups devices by make, model and installed version and marks the

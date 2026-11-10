@@ -117,6 +117,9 @@ What the scope enforces:
   403): groups are what define its boundary (a rule group with an empty rule
   matches the whole fleet), and the other two would let it mint an unscoped
   principal. Reads stay allowed.
+- Reports (`/api/reports/*`) and the firmware inventory (`/api/firmware/inventory`,
+  `/api/firmware/outdated`) cover the scope's devices only; a `device` or `group`
+  query parameter naming something outside the scope answers 403.
 - Each violation is recorded as `auth.denied` with the path and device.
 
 API tokens, scoped or not, additionally cannot create or delete users

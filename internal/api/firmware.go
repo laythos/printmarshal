@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"printmarshal/internal/auth"
 	"printmarshal/internal/firmware"
 	"printmarshal/internal/model"
 	"printmarshal/internal/store"
@@ -66,9 +67,20 @@ func (s *Server) firmwareFail(w http.ResponseWriter, err error) {
 
 // --- inventory ----------------------------------------------------------------
 
+// firmwareInventory lists the fleet's make/model/version cells. A scoped
+// principal sees its own devices only, and may name only a group it was
+// given (403 otherwise, as for the device routes).
 func (s *Server) firmwareInventory(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	inv, err := s.Firmware.Inventory(r.Context(), firmware.InventoryFilter{Make: q.Get("make"), Model: q.Get("model"), GroupID: q.Get("group"), Q: q.Get("q")})
+	f := firmware.InventoryFilter{Make: q.Get("make"), Model: q.Get("model"), GroupID: q.Get("group"), Q: q.Get("q")}
+	if u := auth.UserFrom(r.Context()); u != nil && len(u.Scope) > 0 {
+		if f.GroupID != "" && !scopeHasGroup(u, f.GroupID) {
+			s.denyScope(w, r, u, r.URL.Path+" (group "+f.GroupID+")")
+			return
+		}
+		f.Only = s.scopeDeviceIDs(r.Context())
+	}
+	inv, err := s.Firmware.Inventory(r.Context(), f)
 	if err != nil {
 		s.firmwareFail(w, err)
 		return
@@ -81,6 +93,15 @@ func (s *Server) firmwareOutdated(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.firmwareFail(w, err)
 		return
+	}
+	if set := s.scopeDeviceIDs(r.Context()); set != nil {
+		kept := make([]firmware.OutdatedDevice, 0, len(out))
+		for _, d := range out {
+			if set[d.DeviceID] {
+				kept = append(kept, d)
+			}
+		}
+		out = kept
 	}
 	writeJSON(w, http.StatusOK, out)
 }
